@@ -1,24 +1,18 @@
 import re
-from urllib.parse import urlparse
 
 from django import forms
 from django.contrib.auth import authenticate
+from django.contrib.auth import get_user_model
 
-from .models import User
+from core.constants import PHONE_PATTERN, USER_NAME_MAX_LENGTH
+from core.validators import validate_github_url
 
-
-def validate_github_url(value):
-    if not value:
-        return value
-    hostname = urlparse(value).hostname or ""
-    if hostname.lower() not in {"github.com", "www.github.com"}:
-        raise forms.ValidationError("Ссылка должна вести на GitHub.")
-    return value
+User = get_user_model()
 
 
 class RegisterForm(forms.Form):
-    name = forms.CharField(label="Имя", max_length=124)
-    surname = forms.CharField(label="Фамилия", max_length=124)
+    name = forms.CharField(label="Имя", max_length=USER_NAME_MAX_LENGTH)
+    surname = forms.CharField(label="Фамилия", max_length=USER_NAME_MAX_LENGTH)
     email = forms.EmailField(label="Email")
     password = forms.CharField(label="Пароль", widget=forms.PasswordInput)
 
@@ -57,14 +51,6 @@ class ProfileEditForm(forms.ModelForm):
     class Meta:
         model = User
         fields = ["name", "surname", "avatar", "about", "phone", "github_url"]
-        labels = {
-            "name": "Имя",
-            "surname": "Фамилия",
-            "avatar": "Аватар",
-            "about": "О себе",
-            "phone": "Телефон",
-            "github_url": "GitHub",
-        }
         widgets = {
             "about": forms.Textarea(attrs={"rows": 4}),
         }
@@ -73,7 +59,7 @@ class ProfileEditForm(forms.ModelForm):
         phone = (self.cleaned_data.get("phone") or "").strip()
         if not phone:
             raise forms.ValidationError("Укажите номер телефона.")
-        if not re.fullmatch(r"(8|\+7)\d{10}", phone):
+        if not re.fullmatch(PHONE_PATTERN, phone):
             raise forms.ValidationError("Телефон должен быть в формате 8XXXXXXXXXX или +7XXXXXXXXXX.")
         if phone.startswith("8"):
             phone = "+7" + phone[1:]

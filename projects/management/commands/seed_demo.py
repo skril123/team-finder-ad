@@ -1,7 +1,9 @@
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
 from projects.models import Project, Skill
-from users.models import User
+
+User = get_user_model()
 
 
 class Command(BaseCommand):

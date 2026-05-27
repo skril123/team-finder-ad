@@ -15,39 +15,31 @@ class Migration(migrations.Migration):
             name="Skill",
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("name", models.CharField(max_length=124, unique=True)),
+                ("name", models.CharField(max_length=124, unique=True, verbose_name="название")),
             ],
             options={
                 "ordering": ["name"],
+                "verbose_name": "навык",
+                "verbose_name_plural": "Навыки",
             },
         ),
         migrations.CreateModel(
             name="Project",
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("name", models.CharField(max_length=200)),
-                ("description", models.TextField(blank=True)),
-                ("created_at", models.DateTimeField(auto_now_add=True)),
-                ("github_url", models.URLField(blank=True)),
-                ("status", models.CharField(choices=[("open", "Open"), ("closed", "Closed")], default="open", max_length=6)),
-                ("owner", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="owned_projects", to=settings.AUTH_USER_MODEL)),
-                ("participants", models.ManyToManyField(blank=True, related_name="participated_projects", to=settings.AUTH_USER_MODEL)),
-                ("skills", models.ManyToManyField(blank=True, related_name="projects", to="projects.skill")),
+                ("name", models.CharField(max_length=200, verbose_name="название")),
+                ("description", models.TextField(blank=True, verbose_name="описание")),
+                ("created_at", models.DateTimeField(auto_now_add=True, verbose_name="дата создания")),
+                ("github_url", models.URLField(blank=True, verbose_name="ссылка на GitHub")),
+                ("status", models.CharField(choices=[("open", "Открыт"), ("closed", "Закрыт")], default="open", max_length=6, verbose_name="статус")),
+                ("owner", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="owned_projects", to=settings.AUTH_USER_MODEL, verbose_name="автор")),
+                ("participants", models.ManyToManyField(blank=True, related_name="participated_projects", to=settings.AUTH_USER_MODEL, verbose_name="участники")),
+                ("skills", models.ManyToManyField(blank=True, related_name="projects", to="projects.skill", verbose_name="необходимые навыки")),
             ],
             options={
                 "ordering": ["-created_at"],
+                "verbose_name": "проект",
+                "verbose_name_plural": "Проекты",
             },
-        ),
-        migrations.AddIndex(
-            model_name="skill",
-            index=models.Index(fields=["name"], name="projects_sk_name_431a58_idx"),
-        ),
-        migrations.AddIndex(
-            model_name="project",
-            index=models.Index(fields=["-created_at"], name="projects_pr_created_775fe7_idx"),
-        ),
-        migrations.AddIndex(
-            model_name="project",
-            index=models.Index(fields=["status"], name="projects_pr_status_f023cb_idx"),
         ),
     ]

@@ -1,28 +1,24 @@
-import json
+from http import HTTPStatus
 
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
-from .forms import ProjectForm
-from .models import Project, Skill
+from core.constants import SKILLS_AUTOCOMPLETE_LIMIT
+from core.services import get_request_payload, paginate_queryset
+from projects.forms import ProjectForm
+from projects.models import Project, Skill
 
 
 def project_list(request):
     active_skill = request.GET.get("skill", "").strip()
-    projects = (
-        Project.objects.select_related("owner")
-        .prefetch_related("participants", "skills")
-        .order_by("-created_at")
-    )
+    projects = Project.objects.select_related("owner").prefetch_related("participants", "skills")
     if active_skill:
         projects = projects.filter(skills__name__iexact=active_skill).distinct()
 
-    paginator = Paginator(projects, 12)
-    page_obj = paginator.get_page(request.GET.get("page"))
-    all_skills = Skill.objects.values_list("name", flat=True).order_by("name")
+    page_obj = paginate_queryset(request, projects)
+    all_skills = Skill.objects.values_list("name", flat=True)
     context = {
         "projects": page_obj,
         "page_obj": page_obj,
@@ -42,16 +38,13 @@ def project_detail(request, pk):
 
 @login_required
 def create_project(request):
-    if request.method == "POST":
-        form = ProjectForm(request.POST)
-        if form.is_valid():
-            project = form.save(commit=False)
-            project.owner = request.user
-            project.save()
-            project.participants.add(request.user)
-            return redirect("projects:detail", pk=project.pk)
-    else:
-        form = ProjectForm()
+    form = ProjectForm(data=request.POST if request.method == "POST" else None)
+    if form.is_valid():
+        project = form.save(commit=False)
+        project.owner = request.user
+        project.save()
+        project.participants.add(request.user)
+        return redirect("projects:detail", pk=project.pk)
     return render(request, "projects/create-project.html", {"form": form, "is_edit": False})
 
 
@@ -61,13 +54,10 @@ def edit_project(request, pk):
     if project.owner_id != request.user.id:
         return HttpResponseForbidden("Редактировать проект может только автор.")
 
-    if request.method == "POST":
-        form = ProjectForm(request.POST, instance=project)
-        if form.is_valid():
-            form.save()
-            return redirect("projects:detail", pk=project.pk)
-    else:
-        form = ProjectForm(instance=project)
+    form = ProjectForm(data=request.POST if request.method == "POST" else None, instance=project)
+    if form.is_valid():
+        form.save()
+        return redirect("projects:detail", pk=project.pk)
     return render(request, "projects/create-project.html", {"form": form, "is_edit": True})
 
 
@@ -76,9 +66,9 @@ def edit_project(request, pk):
 def complete_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
     if project.owner_id != request.user.id:
-        return JsonResponse({"status": "error", "error": "forbidden"}, status=403)
+        return JsonResponse({"status": "error", "error": "forbidden"}, status=HTTPStatus.FORBIDDEN)
     if project.status != Project.STATUS_OPEN:
-        return JsonResponse({"status": "error", "error": "already_closed"}, status=400)
+        return JsonResponse({"status": "error", "error": "already_closed"}, status=HTTPStatus.BAD_REQUEST)
 
     project.status = Project.STATUS_CLOSED
     project.save(update_fields=["status"])
@@ -89,12 +79,12 @@ def complete_project(request, pk):
 @require_POST
 def toggle_participate(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if project.participants.filter(pk=request.user.pk).exists():
+    is_participant = project.participants.filter(pk=request.user.pk).exists()
+    if is_participant:
         project.participants.remove(request.user)
-        participant = False
     else:
         project.participants.add(request.user)
-        participant = True
+    participant = not is_participant
     return JsonResponse({"status": "ok", "participant": participant})
 
 
@@ -104,7 +94,7 @@ def skills_autocomplete(request):
     skills = Skill.objects.all()
     if query:
         skills = skills.filter(name__istartswith=query)
-    data = list(skills.order_by("name").values("id", "name")[:10])
+    data = list(skills.values("id", "name")[:SKILLS_AUTOCOMPLETE_LIMIT])
     return JsonResponse(data, safe=False)
 
 
@@ -113,9 +103,9 @@ def skills_autocomplete(request):
 def add_project_skill(request, pk):
     project = get_object_or_404(Project, pk=pk)
     if project.owner_id != request.user.id:
-        return JsonResponse({"status": "error", "error": "forbidden"}, status=403)
+        return JsonResponse({"status": "error", "error": "forbidden"}, status=HTTPStatus.FORBIDDEN)
 
-    payload = _request_payload(request)
+    payload = get_request_payload(request)
     skill_id = payload.get("skill_id")
     name = (payload.get("name") or "").strip()
 
@@ -130,7 +120,7 @@ def add_project_skill(request, pk):
             skill = Skill.objects.create(name=name)
             created = True
     else:
-        return JsonResponse({"status": "error", "error": "empty_skill"}, status=400)
+        return JsonResponse({"status": "error", "error": "empty_skill"}, status=HTTPStatus.BAD_REQUEST)
 
     added = not project.skills.filter(pk=skill.pk).exists()
     if added:
@@ -153,20 +143,11 @@ def add_project_skill(request, pk):
 def remove_project_skill(request, pk, skill_id):
     project = get_object_or_404(Project, pk=pk)
     if project.owner_id != request.user.id:
-        return JsonResponse({"status": "error", "error": "forbidden"}, status=403)
+        return JsonResponse({"status": "error", "error": "forbidden"}, status=HTTPStatus.FORBIDDEN)
 
     skill = get_object_or_404(Skill, pk=skill_id)
     if not project.skills.filter(pk=skill.pk).exists():
-        return JsonResponse({"status": "error", "error": "not_attached"}, status=400)
+        return JsonResponse({"status": "error", "error": "not_attached"}, status=HTTPStatus.BAD_REQUEST)
 
     project.skills.remove(skill)
     return JsonResponse({"status": "ok", "removed": True})
-
-
-def _request_payload(request):
-    if request.content_type == "application/json" and request.body:
-        try:
-            return json.loads(request.body.decode("utf-8"))
-        except json.JSONDecodeError:
-            return {}
-    return request.POST
